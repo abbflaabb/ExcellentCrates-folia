@@ -26,6 +26,7 @@ import su.nightexpress.nightcore.ui.menu.MenuViewer;
 import su.nightexpress.nightcore.ui.menu.click.ClickResult;
 import su.nightexpress.nightcore.ui.menu.item.MenuItem;
 import su.nightexpress.nightcore.ui.menu.type.LinkedMenu;
+import su.nightexpress.nightcore.universalscheduler.foliaScheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.Players;
 import su.nightexpress.nightcore.util.StringUtil;
 import su.nightexpress.nightcore.util.bukkit.NightItem;
@@ -253,12 +254,12 @@ public class CrateOptionsMenu extends LinkedMenu<CratesPlugin, Crate> implements
                     crate.removeHologram();
                     crate.clearBlockPositions();
                     crate.markDirty();
-                    this.runNextTick(flush);
+                    FoliaScheduler.get().runPlayer(player, flush);
                     return;
                 }
 
                 this.plugin.getCrateManager().giveLinkTool(player, crate);
-                this.runNextTick(player::closeInventory);
+                FoliaScheduler.get().runPlayer(player, player::closeInventory);
             }).build()
         );
 

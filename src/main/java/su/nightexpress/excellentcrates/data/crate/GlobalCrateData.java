@@ -7,6 +7,7 @@ import su.nightexpress.excellentcrates.api.crate.Reward;
 import su.nightexpress.excellentcrates.crate.impl.Crate;
 
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class GlobalCrateData {
 
@@ -16,7 +17,7 @@ public class GlobalCrateData {
     private String latestOpenerName;
     private String latestRewardId;
 
-    private boolean dirty;
+    private final AtomicBoolean dirty = new AtomicBoolean();
 
     @NotNull
     public static GlobalCrateData create(@NotNull Crate crate) {
@@ -34,11 +35,19 @@ public class GlobalCrateData {
     }
 
     public boolean isDirty() {
-        return this.dirty;
+        return this.dirty.get();
     }
 
     public void setDirty(boolean dirty) {
-        this.dirty = dirty;
+        this.dirty.set(dirty);
+    }
+
+    /**
+     * Atomically sets the dirty flag from expected value to new value.
+     * @return true if successful
+     */
+    public boolean compareAndSetDirty(boolean expected, boolean newValue) {
+        return this.dirty.compareAndSet(expected, newValue);
     }
 
     public void setLatestOpener(@NotNull Player player) {

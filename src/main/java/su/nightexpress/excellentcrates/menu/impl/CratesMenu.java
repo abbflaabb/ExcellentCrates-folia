@@ -17,6 +17,7 @@ import su.nightexpress.nightcore.menu.MenuViewer;
 import su.nightexpress.nightcore.menu.impl.ConfigMenu;
 import su.nightexpress.nightcore.menu.item.ItemOptions;
 import su.nightexpress.nightcore.menu.item.MenuItem;
+import su.nightexpress.nightcore.universalscheduler.foliaScheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.ItemReplacer;
 import su.nightexpress.nightcore.util.Lists;
 import su.nightexpress.nightcore.util.NumberUtil;
@@ -72,7 +73,7 @@ public class CratesMenu extends ConfigMenu<CratesPlugin> {
                 InteractType clickAction = null;//Config.getCrateClickAction(clickType);
                 if (clickAction == null) return;
 
-                this.runNextTick(() -> {
+                FoliaScheduler.get().runPlayer(player, () -> {
                     player.closeInventory();
                     plugin.getCrateManager().interactCrate(player, crate, clickAction, null, null);
                 });

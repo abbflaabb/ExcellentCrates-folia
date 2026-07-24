@@ -38,7 +38,7 @@ public class CostEntryCreationDialog extends Dialog<Cost> {
         "",
         "You may see this message for one of the following reasons:",
         "",
-        SOFT_RED.wrap("→") + " The " + SOFT_RED.wrap("Keys") + " module is unavailable or has no keys created. You can create keys using the ExcellentCrates editor.",
+        SOFT_RED.wrap("→") + " The " + SOFT_RED.wrap("Keys") + " module is unavailable or has no keys created. You can create keys using the votixmcCrate-Folia editor.",
         "",
         SOFT_RED.wrap("→") + " No supported " + SOFT_RED.wrap("economy") + " or " + SOFT_RED.wrap("currency") + " plugins are installed, or their integration is disabled in the main " + SOFT_RED.wrap("nightcore") + " configuration file."
     );

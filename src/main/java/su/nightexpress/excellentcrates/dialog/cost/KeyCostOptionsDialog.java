@@ -26,7 +26,7 @@ public class KeyCostOptionsDialog extends Dialog<KeyCostEntry> {
     private static final DialogElementLocale BODY = LangEntry.builder("Dialog.CostEntry.Key.Body").dialogElement(400,
         "Specify which key and how many of it are required to open the crate.",
         "",
-        "You can create and edit keys in the " + SOFT_YELLOW.wrap("ExcellentCrates Editor") + "."
+        "You can create and edit keys in the " + SOFT_YELLOW.wrap("votixmcCrate-Folia Editor") + "."
     );
 
     private static final TextLocale LABEL_KEY    = LangEntry.builder("Dialog.CostEntry.Key.Input.Key").text(SOFT_YELLOW.wrap("Key"));

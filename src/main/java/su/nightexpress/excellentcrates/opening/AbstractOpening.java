@@ -150,7 +150,9 @@ public abstract class AbstractOpening implements Opening {
             List<String> postOpenCommands = Replacer.create().replace(this.crate.replacePlaceholders()).apply(this.crate.getPostOpenCommands());
             Players.dispatchCommands(this.player, postOpenCommands);
 
-            this.plugin.getUserManager().save(user);
+            // Save user data asynchronously to avoid blocking the region thread
+            CrateUser finalUser = user;
+            this.plugin.runTaskAsync(() -> plugin.getUserManager().save(finalUser));
         }
     }
 

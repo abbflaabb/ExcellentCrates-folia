@@ -61,6 +61,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CrateManager extends AbstractManager<CratesPlugin> {
 
@@ -80,11 +81,11 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
         super(plugin);
         this.dialogs = dialogs;
 
-        this.rarityByIdMap = new HashMap<>();
-        this.crateByIdMap = new HashMap<>();
-        this.crateByPosMap = new HashMap<>();
-        this.previewByIdMap = new HashMap<>();
-        this.previewCooldown = new HashMap<>();
+        this.rarityByIdMap = new ConcurrentHashMap<>();
+        this.crateByIdMap = new ConcurrentHashMap<>();
+        this.crateByPosMap = new ConcurrentHashMap<>();
+        this.previewByIdMap = new ConcurrentHashMap<>();
+        this.previewCooldown = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -237,11 +238,15 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     }
 
     private void reportProblems() {
-        this.getCrates().forEach(crate -> crate.collectProblems().print(this.plugin.getLogger()));
+        for (Crate crate : this.crateByIdMap.values()) {
+            crate.collectProblems().print(this.plugin.getLogger());
+        }
     }
 
     private void saveCrates() {
-        this.getCrates().forEach(Crate::saveIfDirty);
+        for (Crate crate : this.crateByIdMap.values()) {
+            crate.saveIfDirty();
+        }
     }
 
     public int countCrates() {
@@ -274,7 +279,16 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
     @NotNull
     public Rarity getMostCommonRarity() {
-        return this.getRarities().stream().max(Comparator.comparing(Rarity::getWeight)).orElseThrow();
+        Rarity mostCommon = null;
+        double maxWeight = -1;
+        for (Rarity rarity : this.rarityByIdMap.values()) {
+            if (rarity.getWeight() > maxWeight) {
+                maxWeight = rarity.getWeight();
+                mostCommon = rarity;
+            }
+        }
+        if (mostCommon == null) throw new IllegalStateException("No rarities loaded");
+        return mostCommon;
     }
 
     @NotNull
@@ -315,7 +329,7 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
 
     @NotNull
     public Set<Crate> getCrates() {
-        return new HashSet<>(this.crateByIdMap.values());
+        return Set.copyOf(this.crateByIdMap.values());
     }
 
     public boolean isCrate(@NotNull ItemStack item) {
@@ -345,11 +359,11 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     }
 
     public void removeCratePositions(@NotNull Crate crate) {
-        crate.getBlockPositions().forEach(this.crateByPosMap::remove);
+        crate.forEachBlockPosition(this.crateByPosMap::remove);
     }
 
     public void addCratePositions(@NotNull Crate crate) {
-        crate.getBlockPositions().forEach(pos -> this.crateByPosMap.put(pos, crate));
+        crate.forEachBlockPosition(pos -> this.crateByPosMap.put(pos, crate));
     }
 
     public void createCrate(@NotNull String id) {
@@ -490,7 +504,13 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
             return;
         }
 
-        Cost cost = crate.getFirstCost().orElse(null);
+        Cost cost = null;
+        for (Cost c : crate.getCosts()) {
+            if (c.isAvailable()) {
+                cost = c;
+                break;
+            }
+        }
 
         if (Config.MASS_OPENING_SNEAK_TO_USE.get() && player.isSneaking()) {
             this.multiOpenCrate(player, source, OpenOptions.empty(), cost, crate.countMaxOpenings(player));
@@ -716,25 +736,35 @@ public class CrateManager extends AbstractManager<CratesPlugin> {
     }
 
     public void playCrateEffects() {
-        this.getCrates().forEach(crate -> {
-            if (!crate.isEffectEnabled()) return;
+        for (Crate crate : this.crateByIdMap.values()) {
+            if (!crate.isEffectEnabled()) continue;
 
             CrateEffect effect = crate.getEffect();
-            if (effect.isDummy()) return;
+            if (effect.isDummy()) continue;
 
             UniParticle particle = crate.getEffectParticle();
 
-            crate.getBlockPositions().forEach(worldPos -> {
+            crate.forEachBlockPosition(worldPos -> {
                 if (!worldPos.isChunkLoaded()) return;
 
                 Location location = worldPos.toLocation();
                 if (location == null) return;
 
-                CrateUtils.getPlayersForEffects(location).forEach(player -> {
-                    effect.playStep(location, particle, player);
-                });
+                // Use location-based distance check instead of iterating all players
+                World world = location.getWorld();
+                if (world == null) return;
+
+                int distance = Config.CRATE_EFFECTS_VISIBILITY_DISTANCE.get();
+                double distSq = (double) distance * distance;
+
+                for (Player player : world.getPlayers()) {
+                    if (!player.isOnline()) continue;
+                    if (player.getLocation().distanceSquared(location) <= distSq) {
+                        effect.playStep(location, particle, player);
+                    }
+                }
             });
-        });
+        }
 
         CratesRegistries.getEffects().forEach(CrateEffect::addTickCount);
     }

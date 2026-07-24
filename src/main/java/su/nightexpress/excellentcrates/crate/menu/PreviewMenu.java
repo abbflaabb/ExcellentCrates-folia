@@ -23,6 +23,7 @@ import su.nightexpress.nightcore.ui.menu.item.ItemOptions;
 import su.nightexpress.nightcore.ui.menu.item.MenuItem;
 import su.nightexpress.nightcore.ui.menu.type.LinkedMenu;
 import su.nightexpress.nightcore.util.Lists;
+import su.nightexpress.nightcore.universalscheduler.foliaScheduler.FoliaScheduler;
 import su.nightexpress.nightcore.util.bukkit.NightItem;
 import su.nightexpress.nightcore.util.placeholder.Replacer;
 
@@ -156,7 +157,7 @@ public class PreviewMenu extends LinkedMenu<CratesPlugin, CrateSource> implement
 
             Player player = viewer.getPlayer();
 
-            this.runNextTick(() -> {
+            FoliaScheduler.get().runPlayer(player, () -> {
                 player.closeInventory();
                 plugin.getCrateManager().interactCrate(player, source.getCrate(), InteractType.CRATE_OPEN, source.getItem(), source.getBlock());
             });

@@ -12,19 +12,18 @@ import su.nightexpress.excellentcrates.crate.reward.RewardKey;
 import su.nightexpress.excellentcrates.data.reward.RewardData;
 import su.nightexpress.nightcore.manager.AbstractManager;
 
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 public class DataManager extends AbstractManager<CratesPlugin> {
 
     private final Map<String, GlobalCrateData> crateDataMap;
     private final Map<RewardKey, RewardData>   rewardLimitMap;
 
-    private boolean dataLoaded;
+    private volatile boolean dataLoaded;
 
     public DataManager(@NotNull CratesPlugin plugin) {
         super(plugin);
@@ -54,25 +53,40 @@ public class DataManager extends AbstractManager<CratesPlugin> {
     }
 
     public void saveCrateDatas() {
-        Set<GlobalCrateData> dataSet = this.getCrateDatas().stream()
-            .filter(GlobalCrateData::isDirty)
-            .peek(data -> data.setDirty(false))
-            .collect(Collectors.toSet());
-        if (dataSet.isEmpty()) return;
+        // Use iterator to avoid creating unnecessary intermediate collections
+        boolean hasDirty = false;
+        for (GlobalCrateData data : this.crateDataMap.values()) {
+            if (data.isDirty()) {
+                hasDirty = true;
+                break;
+            }
+        }
+        if (!hasDirty) return;
 
-        this.plugin.getDataHandler().updateCrateDatas(dataSet);
-        //this.plugin.debug("Saved " + dataSet.size() + " crate datas.");
+        // Collect dirty entries and atomically mark them clean
+        for (Map.Entry<String, GlobalCrateData> entry : this.crateDataMap.entrySet()) {
+            GlobalCrateData data = entry.getValue();
+            if (data.compareAndSetDirty(true, false)) {
+                this.plugin.getDataHandler().updateCrateData(data);
+            }
+        }
     }
 
     public void saveRewardLimits() {
-        Set<RewardData> limits = this.getRewardLimits().stream()
-            .filter(RewardData::isSaveRequired)
-            .peek(data -> data.setSaveRequired(false))
-            .collect(Collectors.toSet());
-        if (limits.isEmpty()) return;
+        boolean hasDirty = false;
+        for (RewardData data : this.rewardLimitMap.values()) {
+            if (data.isSaveRequired()) {
+                hasDirty = true;
+                break;
+            }
+        }
+        if (!hasDirty) return;
 
-        this.plugin.getDataHandler().updateRewardLimits(limits);
-        //this.plugin.debug("Saved " + limits.size() + " reward limits.");
+        for (RewardData data : this.rewardLimitMap.values()) {
+            if (data.compareAndSetSaveRequired(true, false)) {
+                this.plugin.getDataHandler().updateRewardLimit(data);
+            }
+        }
     }
 
     public void loadData() {
@@ -85,25 +99,23 @@ public class DataManager extends AbstractManager<CratesPlugin> {
     public void loadCrateDatas() {
         this.crateDataMap.clear();
 
-        this.plugin.getDataHandler().loadCrateDatas().forEach(data -> {
+        for (GlobalCrateData data : this.plugin.getDataHandler().loadCrateDatas()) {
             this.crateDataMap.put(data.getCrateId(), data);
-        });
-
-        //this.plugin.debug("Loaded " + this.crateDataMap.size() + " crate datas.");
+        }
     }
 
     public void loadRewardLimits() {
         this.rewardLimitMap.clear();
 
-        this.plugin.getDataHandler().loadRewardLimits().forEach(this::addRewardLimit);
-
-        //this.plugin.debug("Loaded " + this.rewardLimitMap.size() + " reward limit datas.");
+        for (RewardData data : this.plugin.getDataHandler().loadRewardLimits()) {
+            this.addRewardLimit(data);
+        }
     }
 
 
 
     public void handleSynchronization() {
-        if (!this.isDataLoaded()) return;
+        if (!this.dataLoaded) return;
 
         if (Config.isCrateDataSynchronized()) {
             this.loadCrateDatas();
@@ -134,9 +146,13 @@ public class DataManager extends AbstractManager<CratesPlugin> {
         return this.dataLoaded;
     }
 
+    /**
+     * Returns an unmodifiable view of crate datas. Use sparingly.
+     * For read operations, access the map directly.
+     */
     @NotNull
     public Set<GlobalCrateData> getCrateDatas() {
-        return new HashSet<>(this.crateDataMap.values());
+        return Set.copyOf(this.crateDataMap.values());
     }
 
     @Nullable
@@ -146,30 +162,31 @@ public class DataManager extends AbstractManager<CratesPlugin> {
 
     @NotNull
     public GlobalCrateData getCrateDataOrCreate(@NotNull Crate crate) {
-        GlobalCrateData data = this.getCrateData(crate.getId());
+        GlobalCrateData data = this.crateDataMap.get(crate.getId());
         if (data != null) return data;
 
         GlobalCrateData fresh = GlobalCrateData.create(crate);
-        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().insertCrateData(fresh));
         this.crateDataMap.put(fresh.getCrateId(), fresh);
+        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().insertCrateData(fresh));
         return fresh;
     }
 
     public void deleteCrateData(@NotNull Crate crate) {
-        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteCrateData(crate));
         this.crateDataMap.remove(crate.getId());
+        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteCrateData(crate));
     }
 
 
 
     @NotNull
     public RewardData getRewardLimitOrCreate(@NotNull Reward reward, @Nullable Player player) {
-        RewardData limit = this.getRewardLimit(reward, player);
+        RewardKey key = getRewardKey(reward, player);
+        RewardData limit = this.rewardLimitMap.get(key);
         if (limit != null) return limit;
 
         RewardData fresh = RewardData.create(reward, player);
+        this.rewardLimitMap.put(key, fresh);
         this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().insertRewardLimit(fresh));
-        this.addRewardLimit(fresh);
         return fresh;
     }
 
@@ -181,7 +198,7 @@ public class DataManager extends AbstractManager<CratesPlugin> {
 
     @NotNull
     public Set<RewardData> getRewardLimits() {
-        return new HashSet<>(this.rewardLimitMap.values());
+        return Set.copyOf(this.rewardLimitMap.values());
     }
 
     private void addRewardLimit(@NotNull RewardData limit) {
@@ -190,30 +207,27 @@ public class DataManager extends AbstractManager<CratesPlugin> {
     }
 
     public void deleteRewardLimit(@NotNull RewardData limit) {
-        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimit(limit));
         this.rewardLimitMap.remove(getRewardKey(limit));
+        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimit(limit));
     }
 
     public void deleteRewardLimits(@NotNull Crate crate) {
         String crateId = crate.getId();
-
-        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimits(crate));
         this.rewardLimitMap.keySet().removeIf(key -> key.crateId().equalsIgnoreCase(crateId));
+        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimits(crate));
     }
 
     public void deleteRewardLimits(@NotNull Reward reward) {
         String crateId = reward.getCrate().getId();
         String rewardId = reward.getId();
-
-        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimits(reward));
         this.rewardLimitMap.keySet().removeIf(key -> key.crateId().equalsIgnoreCase(crateId) && key.rewardId().equalsIgnoreCase(rewardId));
+        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimits(reward));
     }
 
     public void deleteRewardLimits(@NotNull UUID playerId) {
         String holder = playerId.toString();
-
-        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimits(playerId));
         this.rewardLimitMap.keySet().removeIf(key -> key.holder().equalsIgnoreCase(holder));
+        this.plugin.runTaskAsync(() -> this.plugin.getDataHandler().deleteRewardLimits(playerId));
     }
 
 

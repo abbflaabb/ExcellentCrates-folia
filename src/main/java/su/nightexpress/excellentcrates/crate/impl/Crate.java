@@ -222,14 +222,17 @@ public class Crate implements ConfigBacked {
 
         this.blockPositions.addAll(config.getStringList("Block.Positions").stream().map(WorldPos::deserialize).toList());
         if (!Config.isCrateInAirBlocksAllowed()) {
-            new FoliaScheduler(plugin).runTask(() -> {
+            FoliaScheduler scheduler = FoliaScheduler.get();
+            scheduler.runGlobal(() -> {
                 List<WorldPos> blockPositionsTemp = new ArrayList<>(blockPositions);
                 for (WorldPos pos : blockPositionsTemp) {
-                    new FoliaScheduler(plugin).runTask(pos.toLocation(), () -> {
+                    Location loc = pos.toLocation();
+                    if (loc == null) continue;
+                    scheduler.runRegion(loc, () -> {
                         Block block = pos.toBlock();
-
-                        if (block == null || block.isEmpty())
+                        if (block == null || block.isEmpty()) {
                             this.blockPositions.remove(pos);
+                        }
                     });
                 }
             });
@@ -503,25 +506,30 @@ public class Crate implements ConfigBacked {
         // If no rarity is specified, we have to select a random one and filter rewards by selected rarity.
         // Otherwise reward list is already obtained with specified rarity.
         if (rarity == null) {
-            Map<Rarity, Double> rarities = new HashMap<>();
-            rewards.stream().map(Reward::getRarity).forEach(rewardRarity -> {
-                rarities.putIfAbsent(rewardRarity, rewardRarity.getWeight());
-            });
+            // Build rarity weight map without streams
+            Map<Rarity, Double> rarityWeights = new HashMap<>();
+            for (Reward reward : rewards) {
+                Rarity r = reward.getRarity();
+                if (!rarityWeights.containsKey(r)) {
+                    rarityWeights.put(r, r.getWeight());
+                }
+            }
 
-            Rarity rarityRoll = Rnd.getByWeight(rarities);
+            Rarity rarityRoll = Rnd.getByWeight(rarityWeights);
+            // Filter in-place
             rewards.removeIf(reward -> reward.getRarity() != rarityRoll);
         }
 
-        return this.rollReward(rewards);
+        return rollRewardDirect(rewards);
     }
 
     @NotNull
-    private Reward rollReward(@NotNull Collection<Reward> allRewards) {
-        Map<Reward, Double> rewards = new HashMap<>();
-        allRewards.forEach(reward -> {
-            rewards.put(reward, reward.getWeight());
-        });
-        return Rnd.getByWeight(rewards);
+    private Reward rollRewardDirect(@NotNull List<Reward> rewards) {
+        Map<Reward, Double> weightMap = new HashMap<>();
+        for (Reward reward : rewards) {
+            weightMap.put(reward, reward.getWeight());
+        }
+        return Rnd.getByWeight(weightMap);
     }
 
     public void addBlockPosition(@NotNull Location location) {
@@ -546,7 +554,13 @@ public class Crate implements ConfigBacked {
     }
 
     public int countMaxOpenings(@NotNull Player player) {
-        return this.getCosts().stream().filter(Cost::isEnabled).mapToInt(cost -> cost.countMaxOpenings(player)).max().orElse(-1);
+        int max = -1;
+        for (Cost cost : this.costMap.values()) {
+            if (!cost.isEnabled()) continue;
+            int count = cost.countMaxOpenings(player);
+            if (count > max) max = count;
+        }
+        return max;
     }
 
     public void markDirty() {
@@ -705,7 +719,16 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public List<Cost> getCosts() {
-        return new ArrayList<>(this.costMap.values());
+        return List.copyOf(this.costMap.values());
+    }
+
+    /**
+     * Internal iteration helper to avoid creating defensive copies.
+     */
+    public void forEachCost(@NotNull Consumer<Cost> action) {
+        for (Cost cost : this.costMap.values()) {
+            action.accept(cost);
+        }
     }
 
     public void addCost(@NotNull Cost cost) {
@@ -727,20 +750,40 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public Optional<Cost> getFirstCost() {
-        return this.getCosts().stream().filter(Cost::isAvailable).findFirst();
+        for (Cost cost : this.costMap.values()) {
+            if (cost.isAvailable()) return Optional.of(cost);
+        }
+        return Optional.empty();
     }
 
     @NotNull
     public Optional<Cost> getAnyCost(@NotNull Player player) {
-        return this.getCosts().stream().filter(cost -> cost.isAvailable() && cost.canAfford(player)).findAny().or(this::getFirstCost);
+        Cost fallback = null;
+        for (Cost cost : this.costMap.values()) {
+            if (!cost.isAvailable()) continue;
+            if (cost.canAfford(player)) return Optional.of(cost);
+            if (fallback == null) fallback = cost;
+        }
+        return Optional.ofNullable(fallback);
     }
 
     public boolean hasCost() {
-        return !this.costMap.isEmpty() && this.getCosts().stream().anyMatch(Cost::isAvailable);
+        if (this.costMap.isEmpty()) return false;
+        for (Cost cost : this.costMap.values()) {
+            if (cost.isAvailable()) return true;
+        }
+        return false;
     }
 
     public boolean hasMultipleCosts() {
-        return this.getCosts().stream().filter(Cost::isAvailable).count() >= 2;
+        int count = 0;
+        for (Cost cost : this.costMap.values()) {
+            if (cost.isAvailable()) {
+                count++;
+                if (count >= 2) return true;
+            }
+        }
+        return false;
     }
 
     public boolean isPushbackEnabled() {
@@ -753,7 +796,16 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public Set<WorldPos> getBlockPositions() {
-        return new HashSet<>(this.blockPositions);
+        return Set.copyOf(this.blockPositions);
+    }
+
+    /**
+     * Internal iteration helper to avoid creating defensive copies.
+     */
+    public void forEachBlockPosition(@NotNull Consumer<WorldPos> action) {
+        for (WorldPos pos : this.blockPositions) {
+            action.accept(pos);
+        }
     }
 
     public boolean isHologramEnabled() {
@@ -828,7 +880,11 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public Set<Rarity> getRarities() {
-        return this.getRewards().stream().map(Reward::getRarity).collect(Collectors.toSet());
+        Set<Rarity> rarities = new HashSet<>();
+        for (Reward reward : this.rewardMap.values()) {
+            rarities.add(reward.getRarity());
+        }
+        return rarities;
     }
 
     @NotNull
@@ -838,7 +894,16 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public Set<Reward> getRewards() {
-        return new LinkedHashSet<>(this.rewardMap.values());
+        return Set.copyOf(this.rewardMap.values());
+    }
+
+    /**
+     * Internal iteration helper to avoid creating defensive copies.
+     */
+    public void forEachReward(@NotNull Consumer<Reward> action) {
+        for (Reward reward : this.rewardMap.values()) {
+            action.accept(reward);
+        }
     }
 
     @NotNull
@@ -853,13 +918,13 @@ public class Crate implements ConfigBacked {
 
     @NotNull
     public List<Reward> getRewards(@Nullable Player player, @Nullable Rarity rarity) {
-        Predicate<Reward> predicate = reward -> {
-            if (rarity != null && reward.getRarity() != rarity) return false;
-
-            return player == null || reward.canWin(player);
-        };
-
-        return new ArrayList<>(this.getRewards().stream().filter(predicate).toList());
+        List<Reward> result = new ArrayList<>();
+        for (Reward reward : this.rewardMap.values()) {
+            if (rarity != null && reward.getRarity() != rarity) continue;
+            if (player != null && !reward.canWin(player)) continue;
+            result.add(reward);
+        }
+        return result;
     }
 
     public void setRewards(@NotNull List<Reward> rewards) {
@@ -899,7 +964,10 @@ public class Crate implements ConfigBacked {
 
     @Nullable
     public Milestone getMilestone(int openings) {
-        return this.milestones.stream().filter(milestone -> milestone.getOpenings() == openings).findFirst().orElse(null);
+        for (Milestone milestone : this.milestones) {
+            if (milestone.getOpenings() == openings) return milestone;
+        }
+        return null;
     }
 
     public boolean isMilestonesRepeatable() {
@@ -911,11 +979,23 @@ public class Crate implements ConfigBacked {
     }
 
     public int getMaxMilestone() {
-        return this.milestones.stream().mapToInt(Milestone::getOpenings).max().orElse(0);
+        int max = 0;
+        for (Milestone milestone : this.milestones) {
+            if (milestone.getOpenings() > max) max = milestone.getOpenings();
+        }
+        return max;
     }
 
     @Nullable
     public Milestone getNextMilestone(int openings) {
-        return this.milestones.stream().filter(milestone -> milestone.getOpenings() > openings).min(Comparator.comparingInt(Milestone::getOpenings)).orElse(null);
+        Milestone closest = null;
+        for (Milestone milestone : this.milestones) {
+            if (milestone.getOpenings() > openings) {
+                if (closest == null || milestone.getOpenings() < closest.getOpenings()) {
+                    closest = milestone;
+                }
+            }
+        }
+        return closest;
     }
 }

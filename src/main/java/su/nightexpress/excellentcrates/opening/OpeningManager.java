@@ -31,7 +31,7 @@ public class OpeningManager extends AbstractManager<CratesPlugin> {
 
     public OpeningManager(@NotNull CratesPlugin plugin) {
         super(plugin);
-        this.providerByIdMap = new HashMap<>();
+        this.providerByIdMap = new ConcurrentHashMap<>();
         this.openingByPlayerMap = new ConcurrentHashMap<>();
         this.dummyProvider = new DummyProvider(plugin);
     }
@@ -152,8 +152,13 @@ public class OpeningManager extends AbstractManager<CratesPlugin> {
         return this.openingByPlayerMap.get(player.getUniqueId());
     }
 
+    private final FoliaScheduler scheduler = FoliaScheduler.get();
+
     public void tickOpenings() {
-        this.getOpenings().forEach(opening -> new FoliaScheduler(plugin).runTask(opening.getPlayer(), opening::tick));
+        for (Opening opening : this.openingByPlayerMap.values()) {
+            if (opening == null) continue;
+            scheduler.runPlayer(opening.getPlayer(), opening::tick);
+        }
     }
 
     public boolean isOpening(@NotNull Player player) {

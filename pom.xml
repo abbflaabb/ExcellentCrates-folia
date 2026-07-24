@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>su.nightexpress.excellentcrates</groupId>
-    <artifactId>ExcellentCrates</artifactId>
+    <artifactId>VotixmcCrate-Folia</artifactId>
     <version>6.6.1</version>
 
     <properties>
@@ -61,13 +61,15 @@
             <scope>provided</scope>
         </dependency>
 
-        <dependency>
-            <groupId>su.nightexpress.nightcore</groupId>
-            <artifactId>main</artifactId>
-            <version>2.10.0</version>
-            <classifier>shaded</classifier>
-            <scope>provided</scope>
-        </dependency>
+
+            <dependency>
+                <groupId>su.nightexpress.nightcore</groupId>
+                <artifactId>main</artifactId>
+                <version>2.16.3</version>
+                <scope>provided</scope>
+            </dependency>
+
+
 
         <dependency>
             <groupId>net.dmulloy2</groupId>

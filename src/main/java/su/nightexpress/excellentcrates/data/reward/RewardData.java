@@ -8,6 +8,8 @@ import su.nightexpress.excellentcrates.crate.impl.Crate;
 import su.nightexpress.excellentcrates.data.DataManager;
 import su.nightexpress.nightcore.util.TimeUtil;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 public class RewardData {
 
     private final String crateId;
@@ -17,7 +19,7 @@ public class RewardData {
     private int  rolls;
     private long cooldownUntil;
 
-    private boolean saveRequired;
+    private final AtomicBoolean saveRequired = new AtomicBoolean();
 
     @NotNull
     public static RewardData create(@NotNull Reward reward, @Nullable Player player) {
@@ -36,11 +38,19 @@ public class RewardData {
     }
 
     public boolean isSaveRequired() {
-        return this.saveRequired;
+        return this.saveRequired.get();
     }
 
     public void setSaveRequired(boolean saveRequired) {
-        this.saveRequired = saveRequired;
+        this.saveRequired.set(saveRequired);
+    }
+
+    /**
+     * Atomically sets the saveRequired flag from expected value to new value.
+     * @return true if successful
+     */
+    public boolean compareAndSetSaveRequired(boolean expected, boolean newValue) {
+        return this.saveRequired.compareAndSet(expected, newValue);
     }
 
     public void reset() {

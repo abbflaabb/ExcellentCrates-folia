@@ -157,7 +157,7 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
             Location location = blockPosition.toLocation();
             if (location == null) continue;
 
-            new FoliaScheduler(this.plugin).runTask(location, () -> {
+            FoliaScheduler.get().runRegion(location, () -> {
                 World world = blockPosition.getWorld();
                 if (!blockPosition.isChunkLoaded() || world == null) {
                     this.discard(group); // Remove all viewers and send entity destroy packet.
@@ -211,7 +211,7 @@ public class HologramManager extends AbstractManager<CratesPlugin> {
             Location loc = blockPos.toLocation();
             if (loc == null) continue;
 
-            new FoliaScheduler(this.plugin).runTask(loc, () -> {
+            FoliaScheduler.get().runRegion(loc, () -> {
                 Block block = blockPos.toBlock();
                 if (block == null) return;
 
